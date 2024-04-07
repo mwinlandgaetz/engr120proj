@@ -19,7 +19,7 @@ IR_THRESHOLD_HIGH = 2**15 + HYST_OFFSET + HYST_RANGE
 IR_THRESHOLD_LOW = 2**15 + HYST_OFFSET - HYST_RANGE #These should be double-checked to ensure the hysteresis works at the desired range. !!!!!!!
 
 
-MAX_RATE = 50 #Esme's constants
+MAX_RATE = 50 #Esme's constants - estimated max rate of water flowing from showers, used in flow_rate function to convert the flow rate into L/min.
 
 COEFFICIENT = 50 #Seb constants. Coefficient for the Resistance_to_Celsius function. May be determined experimentally using a thermometer.  
 
@@ -36,7 +36,7 @@ m_irStatus = [0,0] #Gives the current TRUE/FALSE status of whether the IR sensor
 m_bargraph = [0.0 for i in range(WEEK_TIMESTEP)] #Bargraph output
 
 #Esme's results
-e_flowrate = [0.0,0.0]
+e_flowrate = [0.0,0.0] #records the values detected by both photoresistors
 
 #sebastian's results
 s_Temperature = [0.0,0.0] #records the current temperature at thermistor 1 and 2
@@ -102,9 +102,15 @@ def get_resistance():
     resistance_val = (adcPin.read_u16()) 
     return resistance_val
 def flow_rate(resistance_val): 
-#function that calculates the flow rate of the water based on the resistance found by the get_resistance function	
+#function that calculates the flow rate of the water in L/min based on the resistance found by the get_resistance function	
     water_flow = (resistance_val*MAX_RATE)/(2**16) 
     return water_flow
+def heater_status(shower1_status, shower2_status):
+#function to determine whether the heater is on or off 
+    if shower1_status == "On" or shower2_status == "On":
+        return "ON"
+    else:
+        return "OFF"
 
 #Sebastian functions
 
@@ -146,16 +152,16 @@ def set_heater_status(pindex, threshold, temperature):
         #If on, switches pin off if it is GREATER than the threshold, else stays on and returns on.
         if(temperature > threshold):
             actuatorPin[pindex].off()
-            return "off"
+            return "Off"
         else:
-            return "on"
+            return "On"
     else:
     #If it is off, it switches the pin on if it is LESS than the threshold minus two
         if(temperature < (threshold - 2)):
             actuatorPin[pindex].on()
-            return "on"
+            return "On"
         else:
-            return "off"
+            return "Off"
 
 
 #Purpose: Finds a specified query from a given URL after being fed the starting character and designated ending character. This function assumes all queries have unique ascii starting characters.
@@ -175,7 +181,7 @@ def get_url_query(URL, query_start_indicator, query_end_indicator):
         if (char == query_start_indicator):
             inQuery = True
         elif (char == query_end_indicator):
-            break;
+            break
         
         if (inQuery):
             querystring += char
@@ -277,6 +283,10 @@ def web_page(m_data):
     bar_width = 8
     m_bars_data = []
     m_text_data = []
+    avg_temp = (s_Temperature[0] + s_Temperature[1])/2
+    heater_check = heater_status(shower1_status, shower2_status)
+    num_showers = (m_irStatus[0] + m_irStatus[1])
+    flow = (e_flowrate[0] + e_flowrate[1])
     for i in range(COARSE_TIMESTEP): #Counts off each day, from 0 to 6.
         dayslice = [m_data[j] for j in range(i*FINE_TIMESTEP,(i+1)*FINE_TIMESTEP)]
         print("Printing bars,", dayslice)
@@ -306,22 +316,22 @@ def web_page(m_data):
             <tr> <!--Start of the second row of the table - contains data collected by the sensors-->
             <td>
                 <div style="font-size:170%" class="box"> <!--Div for water temperature value, declares font size and adds box-->
-                35&deg;C <!--The temperature data from the thermistor will be displayed here-->
+                {avg_temp}&deg;C <!--The temperature data from the thermistor is displayed here-->
                 </div>
             </td>
             <td>
                 <div style="font-size:170%" class="box"> <!--Div for the heater status, declares font size and adds box-->
-                OFF <!--States whether the heater is on/off-->
+                {heater_check} <!--States whether the heater is on/off-->
                 </div>
             </td>
             <td>
                 <div style="font-size:170%" class="box"> <!--Div for the number of showers currently in use, declares font size and adds box-->
-                3 <!--The IR sensor will detect how many showers are in use and the number will be displayed here-->
+                {num_showers} <!--The IR sensor detects how many showers are in use and that number is displayed here-->
                 </div>
             </td>
             <td>
                 <div style="font-size:170%" class="box"> <!--Div for the current water usage, declares font size and adds box-->
-                27 L/min <!--Amount of water being used in L/min, will be calculated using data from photoresistor-->
+                {flow} L/min <!--Amount of water being used in L/min, will be calculated using data from photoresistor-->
                 </div>
             </td>
             
@@ -478,7 +488,7 @@ def web_page(m_data):
 
 
     </body>
-    </html>""".format(m_bars_data=m_bars_data,m_text_data = m_text_data, bar_width=bar_width, s_Temperature = s_Temperature)
+    </html>""".format(m_bars_data=m_bars_data,m_text_data = m_text_data, bar_width=bar_width, s_Temperature = s_Temperature, flow=flow, avg_temp=avg_temp, num_showers=num_showers, heater_check=heater_check)
     return html
 
 def send_response(conn, headers, body, max_attempts = 10):
@@ -545,8 +555,10 @@ def main():
                 shower_temp_threshold[1] = get_url_query(request,threshold_q_start_indi[1]," ")
                 print("The threshold values for the showers are", shower_temp_threshold[1],"and", shower_temp_threshold[0],"respectively.")
         
-                shower1_status = set_heater_status(shower_actuator_pindex[0], shower_temp_threshold[0], s_Temperature[0])
-                shower2_status = set_heater_status(shower_actuator_pindex[1], shower_temp_threshold[1], s_Temperature[1])
+            global shower1_status
+            global shower2_status
+            shower1_status = set_heater_status(shower_actuator_pindex[0], shower_temp_threshold[0], s_Temperature[0])
+            shower2_status = set_heater_status(shower_actuator_pindex[1], shower_temp_threshold[1], s_Temperature[1])
 
             # if buzzer_on == 6: #Interprets the results of the query evaluation. This will not compile in its current state; this is example code. !!!!!!!
             #     print('BUZZER ON')
@@ -585,9 +597,5 @@ def main():
     s.close()
     
 main()
-
-
-
-
 
 
