@@ -149,6 +149,7 @@ def Resistance_to_Celsius(thermistor_resistance, coefficient):
 #Return: Returns the string "on" if the temperature is less than the threshold minus two, and off if it is greater than that, or if it is greater than the threshold overall.
 
 def set_heater_status(pindex, threshold, temperature):
+    status = shower1_status if (pindex == 2) else shower2_status
     #Checks if pin is on or off. 
     if(status.lower() == "on"):
         #If on, switches pin off if it is GREATER than the threshold, else stays on and returns on.
@@ -254,21 +255,22 @@ def picoHardwareLoop():
         pollSensors(2) #seb's sensors
         
         #Update the bar-graph record as the sum of flow rates.
-        m_dataRecord[timestamp//WEEK_TIMESTEP][timestamp%WEEK_TIMESTEP] = (e_flowrate[0]+e_flowrate[1])
+        m_dataRecord[timestamp//WEEK_TIMESTEP][timestamp%WEEK_TIMESTEP] = 25#(e_flowrate[0]+e_flowrate[1])
         #Calculate the rolling average for the current time ID only. Other values don't need to be recalculated.
         m_ravg = 0.0 #Temporary value, does not need to leave scope.
         for i in range(RAVG_DEPTH):
-            m_ravg = m_dataRecord[i][timestamp%WEEK_TIMESTEP]
+            m_ravg += m_dataRecord[i][timestamp%WEEK_TIMESTEP]
         m_bargraph[timestamp%WEEK_TIMESTEP] = m_ravg/RAVG_DEPTH
         timestamp += 1
         
         if(timestamp>=TOTAL_TIME):
+            print(m_dataRecord)
             timestamp = 0
         
         #PLACEHOLDER: Update actuators
             
         #PLACEHOLDER: Push results to webpage-exposed API. Note: This might not be necessary; since it's running in a separate thread, the results can be dynamically accessed so long as they're global variables.
-        utime.sleep(5)
+        utime.sleep(0.5)
     print("Exiting Hardware Loop")
     
 def get_status(): #Intakes the status of things we want to push to the webpage as a dictionary and then returns it as a json to be pushed. This is the main Pico -> Webpage API.
@@ -338,7 +340,7 @@ def web_page(m_data):
             </td>
             
         </table>
-<table border = "1" width = 50%> <!--Beginning of table containing the graph-->
+<table border = "1" width = 75%> <!--Beginning of table containing the graph-->
     <tr class="barbox"><td>Sunday</td><td>Monday</td><td>Tuesday</td><td>Wednesday</td><td>Thursday</td><td>Friday</td><td>Saturday</td></tr>
     <tr class="barbox">
     <!--The element below constitutes each bar of the graphs in order, separated by cell. It was populated by Python templating.-->
@@ -612,8 +614,8 @@ shower_actuator_pindex = [actuatorPin[2],actuatorPin[3]]
 def main():
     global shutdown
     print("Booting up...")
-    # hardwarethread = _thread.start_new_thread(picoHardwareLoop,())
-    # print("Created hardware loop thread {}".format(hardwarethread))
+    hardwarethread = _thread.start_new_thread(picoHardwareLoop,())
+    print("Created hardware loop thread {}".format(hardwarethread))
 
     # Create a network connection
     ssid = 'RPI_PICO_AP'       #Set access point name 
