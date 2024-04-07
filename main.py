@@ -116,6 +116,18 @@ def heater_status(shower1_status, shower2_status):
 
 #Sebastian functions
 
+#Function: Resistance_to_Celsius:
+#Purpose: Converts an inputted 16-bit value to a range up to 50. Intended for use with the ADC pin and thermistor 16-bit resistance readings. Converts them to Celsius. 
+#Parameters: thermistor_resistance: 16-bit value input. Intended to be sourced from the ADC reading of the thermistor.
+#		     coefficient: Conversion coefficient that dictates what the value the 16-bit input is converted to. May be determined experimentally with a thermometer.
+#Return: Returns the calculated temperature.
+
+def Resistance_to_Celsius(thermistor_resistance, coefficient):
+    Temperature = thermistor_resistance*coefficient/(2**16)
+    
+    return Temperature
+
+
 #Function: s_CollectTemperatureData
 #Purpose: Collects the 16-bit value reading from the ADC pin, then calls the Resistance_to_Celsius conversion function and places it inside of the variable "result."
 #Parameters: Takes no parameters.
@@ -129,19 +141,9 @@ def s_CollectTemperatureData():
     return result
 
 
-#Function: Resistance_to_Celsius:
-#Purpose: Converts an inputted 16-bit value to a range up to 50. Intended for use with the ADC pin and thermistor 16-bit resistance readings. Converts them to Celsius. 
-#Parameters: thermistor_resistance: 16-bit value input. Intended to be sourced from the ADC reading of the thermistor.
-#		     coefficient: Conversion coefficient that dictates what the value the 16-bit input is converted to. May be determined experimentally with a thermometer.
-#Return: Returns the calculated temperature.
-
-def Resistance_to_Celsius(thermistor_resistance, coefficient):
-    Temperature = thermistor_resistance*coefficient/(2**16)
-    
-    return Temperature
-
 #Is there a function to actually encode switching the heating elements off and on? !!!!!!!
 
+#Function: set_heater_status
 #Purpose: Sets the heater status for a given shower to on or off based on the parameters it was passed
 #Parameters: int pindex: GPIO output pin array index number that correlates to a given shower heater
 #             float threshold: The temperature threshold for a shower. Inteneded to correlate to the pin and taken from the UI.
@@ -194,6 +196,17 @@ def get_url_query(URL, query_start_indicator, query_end_indicator):
     query_value = int(float(querystring_as_list[1]))
     
     return query_value
+
+
+#Function: vacancy_string
+#Purpose: Takes the status of the IR sensor and returns the strings "In Use" or "Vacant" for use in the HTML.
+#Parameters: Takes the detection status of the IR sensors.
+#Return: Returns "In Use" if the IR says the shower is in use, and "Vacant" otherwise.
+def vacancy_string(IR_input):
+    if(IR_input):
+        return "In Use"
+    else:
+        return "Vacant"
 
 
 #Main sensor-checking function
@@ -378,7 +391,7 @@ def web_page(m_data):
         </tr>
         <tr>
           <td>Status:</td>
-          <td>In Use/Vacant</td> <!--One of these will be selected depending on the IR status-->  
+          <td>{shower_occupency0}</td> <!--One of these will be selected depending on the IR status-->  
           <td style="text-align:center;">HOT Threshold</td> 
         </tr>
           <tr>
@@ -402,7 +415,7 @@ def web_page(m_data):
         </tr>
         <tr>
           <td>Heater Status:</td>
-          <td>On/Off</td> <!--One of these will be selected based on the heater status, which may be its own variable or extrapolated based on current temperature and threshold. I believe the former is more appropriate-->  
+          <td>{shower1_heater_status}</td> <!--One of these will be selected based on the heater status, which may be its own variable or extrapolated based on current temperature and threshold. I believe the former is more appropriate-->  
         </tr>   
       </table> 
       
@@ -416,7 +429,7 @@ def web_page(m_data):
         </tr>
         <tr>
           <td>Status:</td>
-          <td>In Use/Vacant</td>
+          <td>{shower_occupency1}</td>
           <td style="text-align:center;">HOT Threshold</td>
         </tr>
           <tr>
@@ -435,7 +448,7 @@ def web_page(m_data):
         </tr>
         <tr>
           <td>Heater Status:</td>
-          <td>On/Off</td>
+          <td>{shower2_heater_status}</td>
         </tr>
       </table>  
       <!--</center>-->
@@ -492,7 +505,7 @@ def web_page(m_data):
 
 
     </body>
-    </html>""".format(m_bars_data=m_bars_data,m_text_data = m_text_data, bar_width=bar_width, s_Temperature0 = s_Temperature[0], s_Temperature1 = s_Temperature[1], flow=flow, avg_temp=avg_temp, num_showers=num_showers, heater_check=heater_check)
+    </html>""".format(m_bars_data=m_bars_data,m_text_data = m_text_data, bar_width=bar_width, s_Temperature0 = s_Temperature[0], s_Temperature1 = s_Temperature[1], flow=flow, avg_temp=avg_temp, num_showers=num_showers, heater_check=heater_check, shower_occupency0 = shower_occupency[0], shower_occupency1 = shower_occupency[1], shower1_heater_status = shower1_heater_status, shower2_heater_status = shower2_heater_status)
     return html
 
 def send_response(conn, headers, body, max_attempts = 10):
@@ -609,7 +622,9 @@ def respond_request(socket):
 threshold_q_start_indi = ["?","&"] #index 0 for shower 1, index 1 for shower 2
 shower_temp_threshold = [1,1]
 shower_actuator_pindex = [actuatorPin[2],actuatorPin[3]]
-
+shower_occupency = ["Vacant", "Vacant"]
+shower1_heater_status = "Off"
+shower2_heater_status = "Off"
 
 def main():
     global shutdown
