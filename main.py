@@ -150,7 +150,7 @@ def Resistance_to_Celsius(thermistor_resistance, coefficient):
 
 def set_heater_status(pindex, threshold, temperature):
     #Checks if pin is on or off. 
-    if(actuatorPin[pindex].value()):
+    if(status.lower() == "on"):
         #If on, switches pin off if it is GREATER than the threshold, else stays on and returns on.
         if(temperature > threshold):
             actuatorPin[pindex].off()
@@ -384,7 +384,7 @@ def web_page(m_data):
           </tr>
         <tr>
           <td>Water Temperature:</td>
-          <td>{s_Temperature[0]}°C</td><!--This is where the temperature of the water for the current shower will go-->  
+          <td>{s_Temperature0}°C</td><!--This is where the temperature of the water for the current shower will go-->  
           <td><input type="range" min="0" max="50" value="40" class="slider" id="threshold1">10°C <span style="float:right">50°C</span></td>
           
           <!--Later, this and other sliders like it will relay the selected value back to the pico to change the threshold that enables the inline heating system-->  
@@ -422,7 +422,7 @@ def web_page(m_data):
           </tr>
         <tr>
           <td>Water Temperature:</td>
-          <td>{s_Temperature[1]}°C</td>
+          <td>{s_Temperature1}°C</td>
           
           <td><input type="range" min="0" max="50" value="40" class="slider" id="threshold2">10°C <span style="float:right">50°C</span></td>
           
@@ -490,7 +490,7 @@ def web_page(m_data):
 
 
     </body>
-    </html>""".format(m_bars_data=m_bars_data,m_text_data = m_text_data, bar_width=bar_width, s_Temperature = s_Temperature, flow=flow, avg_temp=avg_temp, num_showers=num_showers, heater_check=heater_check)
+    </html>""".format(m_bars_data=m_bars_data,m_text_data = m_text_data, bar_width=bar_width, s_Temperature0 = s_Temperature[0], s_Temperature1 = s_Temperature[1], flow=flow, avg_temp=avg_temp, num_showers=num_showers, heater_check=heater_check)
     return html
 
 def send_response(conn, headers, body, max_attempts = 10):
@@ -515,65 +515,32 @@ def send_response(conn, headers, body, max_attempts = 10):
         raise RuntimeError("Failed to send body after {} attempts".format(attempts))
     
 def process_request(request):
+    global shower1_status
+    global shower2_status
     response = ""
-    # conn,addr = s.accept()
-            # print('Got a connection from %s' % str(addr))
-            # request = conn.recv(1024)
-            # if request:
-            #     request = str(request)
-            #     print('Request Content = {}\n'.format(request))
-            #     shower_temp_threshold[0] = get_url_query(request,threshold_q_start_indi[0],threshold_q_start_indi[1])
-            #     shower_temp_threshold[1] = get_url_query(request,threshold_q_start_indi[1]," ")
-            #     print("The threshold values for the showers are", shower_temp_threshold[1],"and", shower_temp_threshold[0],"respectively.")
-        
-            # shower1_status = set_heater_status(shower_actuator_pindex[0], shower_temp_threshold[0], s_Temperature[0])
-            # shower2_status = set_heater_status(shower_actuator_pindex[1], shower_temp_threshold[1], s_Temperature[1])
+    # if request:
+    #     request = str(request)
+    #     print('Request Content = {}\n'.format(request))
+    #     shower_temp_threshold[0] = get_url_query(request,threshold_q_start_indi[0],threshold_q_start_indi[1])
+    #     shower_temp_threshold[1] = get_url_query(request,threshold_q_start_indi[1]," ")
+    #     print("The threshold values for the showers are", shower_temp_threshold[1],"and", shower_temp_threshold[0],"respectively.")
 
-            # # if buzzer_on == 6: #Interprets the results of the query evaluation. This will not compile in its current state; this is example code. !!!!!!!
-            # #     print('BUZZER ON')
-            # #     redLED_pin.value(1)
-            # # elif buzzer_off == 6:
-            # #     print('BUZZER OFF')
-            # #     redLED_pin.value(0)
-            # try:
-            #     # pushes the json from get_status() to the webpage.
-            #     if request.find("/status") == 6:
-            #         print("getting status")
-            #         response = get_status()
-            #         conn.sendall("HTTP/1.1 200 OK\n")
-            #         conn.sendall("Content-Type: application/json\n")
-            #         conn.sendall("Connection: close\n\n")
-            #         conn.sendall(response)
-            #     else:
-            #         print("getting webpage")
-            #         response = web_page(m_bargraph)
-            #         print("sending status ({} bytes)".format(len(response)))
-            #         headers = ["HTTP/1.1 200 OK", "Content-Type: text/html", "Content-Length: {}".format(len(response)), "Connection: close"]
-            #         headerstr = "\n".join(headers) + "\n\n"
-            #         send_response(conn, headerstr, response, 25)
+    shower1_status = set_heater_status(2, shower_temp_threshold[0], s_Temperature[0])
+    shower2_status = set_heater_status(3, shower_temp_threshold[1], s_Temperature[1])
 
-            # except Exception as e:
-            #     conn.sendall(b"HTTP/1.1 500 Internal Server Error\n")
-            #     print(e)
-            #     raise
-            # finally:
-            #     print("finished sending data")
-            #     conn.close()
-            #     #utime.sleep(1)
-    # if request.find("/status") == 6:
-    #     print("getting status")
-    #     response = get_status()
-    #     conn.sendall("HTTP/1.1 200 OK\n")
-    #     conn.sendall("Content-Type: application/json\n")
-    #     conn.sendall("Connection: close\n\n")
-    #     conn.sendall(response)
-    # else:
-    #     print("getting webpage")
-    #     response = web_page(m_bargraph)
-    #     print("sending status ({} bytes)".format(len(response)))
-    #     headers = ["HTTP/1.1 200 OK", "Content-Type: text/html", "Content-Length: {}".format(len(response)), "Connection: close"]
-    #     headerstr = "\n".join(headers) + "\n\n"
-    #     send_response(conn, headerstr, response, 25)
+    if request["path"] == "/":
+        print("getting webpage")
+        body = web_page(m_bargraph)
+        headers = ["HTTP/1.1 200 OK", "Content-Type: text/html", "Content-Length: {}".format(len(body)), "Connection: close"]
+        response = "\n".join(headers) + "\n\n" + body
+
+    elif request["path"] == "/status":
+        print("getting status")
+        body = get_status()
+        headers = ["HTTP/1.1 200 OK", "application/json", "Content-Length: {}".format(len(body)), "Connection: close"]
+        response = "\n".join(headers) + "\n\n" + body
+    else:
+        response = "HTTP/1.1 404 Not Found\n\n"
     return response
 
 def respond_request(socket):
