@@ -447,11 +447,90 @@ def send_response(conn, headers, body, max_attempts = 10):
     if bodylen < len(body):
         raise RuntimeError("Failed to send body after {} attempts".format(attempts))
     
+def process_request(request):
+    response = ""
+    # if request.find("/status") == 6:
+    #     print("getting status")
+    #     response = get_status()
+    #     conn.sendall("HTTP/1.1 200 OK\n")
+    #     conn.sendall("Content-Type: application/json\n")
+    #     conn.sendall("Connection: close\n\n")
+    #     conn.sendall(response)
+    # else:
+    #     print("getting webpage")
+    #     response = web_page(m_bargraph)
+    #     print("sending status ({} bytes)".format(len(response)))
+    #     headers = ["HTTP/1.1 200 OK", "Content-Type: text/html", "Content-Length: {}".format(len(response)), "Connection: close"]
+    #     headerstr = "\n".join(headers) + "\n\n"
+    #     send_response(conn, headerstr, response, 25)
+    return response
+
+def respond_request(socket):
+    #Beginning of websocket working document.
+    try:
+        conn, addr = socket.accept()
+    except OSError as e:
+        if e.errno == 110:
+            return
+        else:
+            raise
+
+    print('Got a connection from {}'.format(addr))
+
+    try:
+        recv_bufsize = 1024
+        reqdata = b""
+        chunk = conn.recv(recv_bufsize)
+        while chunk:
+            reqdata += chunk
+            if len(chunk) == recv_bufsize:
+                chunk = conn.recv(recv_bufsize)
+            else:
+                chunk = None
+
+        if not reqdata:
+            return None
+        
+        reqdata = reqdata.decode("UTF-8")
+        reqdata = reqdata.replace("\r\n", "\n")
+        # print('Request Content = {}'.format(reqdata))
+
+        request = {}
+        reqline, _, reqdata = reqdata.partition("\n")
+        reqline = reqline.split(" ")
+        request["method"] = reqline[0]
+        request["fullpath"] = reqline[1]
+        request["path"], _, request["querystr"] = request["fullpath"].partition("?")
+        request["query"] = []
+        if request["querystr"]:
+            for param in request["querystr"].split("&"):
+                k, _, v = param.partition("=")
+                request["query"].append((k, v.strip(" ")))
+        request["protocol"] = reqline[2]
+
+        headerstr, _, request["body"] = reqdata.partition("\n\n")
+
+        request["headers"] = []
+        for line in headerstr.split("\n"):
+            k, _, v = line.partition(":")
+            request["headers"].append((k, v.strip(" ")))
+
+        response = process_request(request).encode("UTF-8")
+        sentlen = 0
+        while sentlen < len(response):
+            sentlen += conn.send(response[sentlen:])
+        print("Sent {} bytes response.".format(sentlen))
+    finally:
+        conn.close()
+    return
+    
+    
+
 def main():
     global shutdown
     print("Booting up...")
-    hardwarethread = _thread.start_new_thread(picoHardwareLoop,())
-    print("Created hardware loop thread {}".format(hardwarethread))
+    # hardwarethread = _thread.start_new_thread(picoHardwareLoop,())
+    # print("Created hardware loop thread {}".format(hardwarethread))
 
     # Create a network connection
     ssid = 'RPI_PICO_AP'       #Set access point name 
@@ -467,50 +546,12 @@ def main():
 
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.bind(('', 80))
+    s.settimeout(0.5)
     s.listen(5)
     
     while not shutdown:
         try:
-            #Beginning of websocket working document.
-            conn,addr = s.accept()
-            print('Got a connection from %s' % str(addr))
-            request = conn.recv(1024)
-            if request:
-                request = str(request)
-                print('Request Content = {}\n'.format(request))
-                #Insert scraper for Seb's query evaluation from the webpage!!!!!!!
-
-            # if buzzer_on == 6: #Interprets the results of the query evaluation. This will not compile in its current state; this is example code. !!!!!!!
-            #     print('BUZZER ON')
-            #     redLED_pin.value(1)
-            # elif buzzer_off == 6:
-            #     print('BUZZER OFF')
-            #     redLED_pin.value(0)
-            try:
-                # pushes the json from get_status() to the webpage.
-                if request.find("/status") == 6:
-                    print("getting status")
-                    response = get_status()
-                    conn.sendall("HTTP/1.1 200 OK\n")
-                    conn.sendall("Content-Type: application/json\n")
-                    conn.sendall("Connection: close\n\n")
-                    conn.sendall(response)
-                else:
-                    print("getting webpage")
-                    response = web_page(m_bargraph)
-                    print("sending status ({} bytes)".format(len(response)))
-                    headers = ["HTTP/1.1 200 OK", "Content-Type: text/html", "Content-Length: {}".format(len(response)), "Connection: close"]
-                    headerstr = "\n".join(headers) + "\n\n"
-                    send_response(conn, headerstr, response, 25)
-
-            except Exception as e:
-                conn.sendall(b"HTTP/1.1 500 Internal Server Error\n")
-                print(e)
-                raise
-            finally:
-                print("finished sending data")
-                conn.close()
-                #utime.sleep(1)
+            respond_request(s)
         except KeyboardInterrupt:
             print("Shutting down...")
             shutdown = True
