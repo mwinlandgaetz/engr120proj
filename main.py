@@ -604,6 +604,11 @@ def respond_request(socket):
         while sentlen < len(response):
             sentlen += conn.send(response[sentlen:])
         print("Sent {} bytes response.".format(sentlen))
+    except OSError as e:
+        if e.errno == 110:
+            return
+        else:
+            raise
     finally:
         conn.close()
     return
@@ -620,8 +625,9 @@ shower2_heater_status = "Off"
 def main():
     global shutdown
     print("Booting up...")
-    #hardwarethread = _thread.start_new_thread(picoHardwareLoop,())
-    #print("Created hardware loop thread {}".format(hardwarethread))
+
+    watchdog = machine.WDT(timeout=5000)
+    print("Created Watchdog timer")
 
     # Create a network connection
     ssid = 'RPI_PICO_AP'       #Set access point name 
@@ -643,6 +649,7 @@ def main():
     next_hardware_update = utime.ticks_ms()
     while not shutdown:
         try:
+            watchdog.feed()
             respond_request(s)
             #print(utime.ticks_ms())
             if utime.ticks_diff(next_hardware_update, utime.ticks_ms()) < 0:
