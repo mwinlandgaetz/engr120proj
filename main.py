@@ -2,7 +2,6 @@ import utime
 import machine
 import usocket as socket
 import network
-import _thread
 import json
 
 #Bargraph constants
@@ -254,37 +253,33 @@ def pollSensors(sensorID):
 #Beginning of core functions.
 
 def picoHardwareLoop():
-    print("Hardware loop!")
-    global shutdown
+    #print("Hardware loop!")
     global adcPin
     global m_dataRecord
     global m_bargraph
     global timestamp
     #global obLed
-    while not shutdown:
-        #print(".")
-        pollSensors(0) #maya's sensors
-        pollSensors(1) #esme's sensors
-        pollSensors(2) #seb's sensors
+    #print(".")
+    pollSensors(0) #maya's sensors
+    pollSensors(1) #esme's sensors
+    pollSensors(2) #seb's sensors
+    
+    #Update the bar-graph record as the sum of flow rates.
+    m_dataRecord[timestamp//WEEK_TIMESTEP][timestamp%WEEK_TIMESTEP] = 25#(e_flowrate[0]+e_flowrate[1])
+    #Calculate the rolling average for the current time ID only. Other values don't need to be recalculated.
+    m_ravg = 0.0 #Temporary value, does not need to leave scope.
+    for i in range(RAVG_DEPTH):
+        m_ravg += m_dataRecord[i][timestamp%WEEK_TIMESTEP]
+    m_bargraph[timestamp%WEEK_TIMESTEP] = m_ravg/RAVG_DEPTH
+    timestamp += 1
+    
+    if(timestamp>=TOTAL_TIME):
+        print(m_dataRecord)
+        timestamp = 0
+    
+    #PLACEHOLDER: Update actuators
         
-        #Update the bar-graph record as the sum of flow rates.
-        m_dataRecord[timestamp//WEEK_TIMESTEP][timestamp%WEEK_TIMESTEP] = 25#(e_flowrate[0]+e_flowrate[1])
-        #Calculate the rolling average for the current time ID only. Other values don't need to be recalculated.
-        m_ravg = 0.0 #Temporary value, does not need to leave scope.
-        for i in range(RAVG_DEPTH):
-            m_ravg += m_dataRecord[i][timestamp%WEEK_TIMESTEP]
-        m_bargraph[timestamp%WEEK_TIMESTEP] = m_ravg/RAVG_DEPTH
-        timestamp += 1
-        
-        if(timestamp>=TOTAL_TIME):
-            print(m_dataRecord)
-            timestamp = 0
-        
-        #PLACEHOLDER: Update actuators
-            
-        #PLACEHOLDER: Push results to webpage-exposed API. Note: This might not be necessary; since it's running in a separate thread, the results can be dynamically accessed so long as they're global variables.
-        utime.sleep(0.5)
-    print("Exiting Hardware Loop")
+    #PLACEHOLDER: Push results to webpage-exposed API. Note: This might not be necessary; since it's running in a separate thread, the results can be dynamically accessed so long as they're global variables.
     
 def get_status(): #Intakes the status of things we want to push to the webpage as a dictionary and then returns it as a json to be pushed. This is the main Pico -> Webpage API.
     status = {
@@ -629,8 +624,8 @@ shower2_heater_status = "Off"
 def main():
     global shutdown
     print("Booting up...")
-    hardwarethread = _thread.start_new_thread(picoHardwareLoop,())
-    print("Created hardware loop thread {}".format(hardwarethread))
+    #hardwarethread = _thread.start_new_thread(picoHardwareLoop,())
+    #print("Created hardware loop thread {}".format(hardwarethread))
 
     # Create a network connection
     ssid = 'RPI_PICO_AP'       #Set access point name 
@@ -646,12 +641,18 @@ def main():
 
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.bind(('', 80))
-    s.settimeout(0.5)
+    s.settimeout(0.1)
     s.listen(5)
     
+    next_hardware_update = utime.ticks_ms()
     while not shutdown:
         try:
             respond_request(s)
+            #print(utime.ticks_ms())
+            if utime.ticks_diff(next_hardware_update, utime.ticks_ms()) < 0:
+                print("Hardware update...")
+                picoHardwareLoop()
+                next_hardware_update = utime.ticks_ms() + 1000
         except KeyboardInterrupt:
             print("Shutting down...")
             shutdown = True
