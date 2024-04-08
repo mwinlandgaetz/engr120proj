@@ -3,6 +3,7 @@ import machine
 import usocket as socket
 import network
 import json
+import gc #Added a garbage collection library because I was having some memory management problems.
 
 #Bargraph constants
 FINE_TIMESTEP = 6
@@ -36,8 +37,8 @@ m_bargraph = [0.0 for i in range(WEEK_TIMESTEP)] #Bargraph output
 
 #Esme's results
 e_flowrate = [0.0,0.0] #records the values detected by both photoresistors
-shower1_status = "off"
-shower2_status = "off"
+shower1_status = "Off"
+shower2_status = "Off"
 
 #sebastian's results
 s_Temperature = [0.0,0.0] #records the current temperature at thermistor 1 and 2
@@ -57,7 +58,7 @@ def m_IRsensor(m_irID):
     else:
         actuatorPin[m_irID].off()
 
-def m_minmax(data):
+def m_minmax(data): #Simple function that computes the minimum and maximum of the data passed by m_peak_day().
     output = [0.0,0,float(COEFFICIENT),0]
     for i in range(len(data)):
         c = data[i]
@@ -69,7 +70,7 @@ def m_minmax(data):
             output[3]=i
     return output
 
-def m_bars_day(m_day_response): #Writes the bars for a single day.
+def m_bars_day(m_day_response): #Writes the bars for a single day as HTML.
     bars = []
     bars.append("""<td><span class="bar" style="height: 150px; width: 0px; opacity: 0;"></span>""")
     for i in range(len(m_day_response)):
@@ -81,7 +82,7 @@ def m_bars_day(m_day_response): #Writes the bars for a single day.
     bars.append("</td>")
     return "".join(bars)
 
-def m_peak_day(m_day_response):
+def m_peak_day(m_day_response): #Assembles the min/max into HTML. 
     data_txt = []
     data_txt.append("""<td>""")
     data = m_day_response
@@ -149,10 +150,11 @@ def s_CollectTemperatureData():
 #             float temperature: The current temperature from a thermometer. Intended to correlate to the above shower. 
 #Return: Returns the string "on" if the temperature is less than the threshold minus two, and off if it is greater than that, or if it is greater than the threshold overall.
 
-def set_heater_status(pindex, threshold, temperature):
-    status = shower1_status if (pindex == 2) else shower2_status
+def set_heater_status(pindex, threshold, temperature): #Switches the heater status on or off depending on the temperature at the thermistor and the threshold values.
+    status = [shower1_status,m_irStatus[0]] if (pindex == 2) else [shower2_status,m_irStatus[1]]
     #Checks if pin is on or off. 
-    if(status.lower() == "on"):
+    if(status[1] == 0): return "Off"
+    if(status[0].lower() == "on"):
         #If on, switches pin off if it is GREATER than the threshold, else stays on and returns on.
         if(temperature > threshold):
             actuatorPin[pindex].off()
@@ -168,33 +170,34 @@ def set_heater_status(pindex, threshold, temperature):
             return "Off"
 
 
+
 #Purpose: Finds a specified query from a given URL after being fed the starting character and designated ending character. This function assumes all queries have unique ascii starting characters.
 #Parameters: str URL: Full current URL string
 #             char query_start_indicator: The character that denotes the start of your query string segment. Will not be included in the taken string.
 #             char query_end_indicator: The character that denotes the end of your query string segment. Will not be included in the taken string.
 #Return: Returns a truncated int that is the extracted value from the specified URL query.
 
-def get_url_query(URL, query_start_indicator, query_end_indicator):
+# def get_url_query(URL, query_start_indicator, query_end_indicator):
     
-    querystring = ""
+#     querystring = ""
     
-    #means that the current character is between the start and end indicator
-    inQuery = False
+#     #means that the current character is between the start and end indicator
+#     inQuery = False
     
-    for char in URL:
-        if (char == query_start_indicator):
-            inQuery = True
-        elif (char == query_end_indicator):
-            break
+#     for char in URL:
+#         if (char == query_start_indicator):
+#             inQuery = True
+#         elif (char == query_end_indicator):
+#             break
         
-        if (inQuery):
-            querystring += char
+#         if (inQuery):
+#             querystring += char
     
-    #now you have the query string, so find the equals sign in the query string
-    querystring_as_list = querystring.split("=")
-    query_value = int(float(querystring_as_list[1]))
+#     #now you have the query string, so find the equals sign in the query string
+#     querystring_as_list = querystring.split("=")
+#     query_value = int(float(querystring_as_list[1]))
     
-    return query_value
+#     return query_value
 
 
 #Function: vacancy_string
@@ -252,7 +255,7 @@ def pollSensors(sensorID):
 
 #Beginning of core functions.
 
-def picoHardwareLoop():
+def picoHardwareLoop(): #Main hardware-based loop that polls the sensors and updates the actuators!! Lehung/Dr. Chelvan look here!
     #print("Hardware loop!")
     global adcPin
     global m_dataRecord
@@ -263,11 +266,16 @@ def picoHardwareLoop():
     pollSensors(0) #maya's sensors
     pollSensors(1) #esme's sensors
     pollSensors(2) #seb's sensors
+
+    global shower1_status
+    global shower2_status
+    shower1_status = set_heater_status(2, shower_temp_threshold[0], s_Temperature[0]) #Updates the heater status.
+    shower2_status = set_heater_status(3, shower_temp_threshold[1], s_Temperature[1])
     
-    #Update the bar-graph record as the sum of flow rates.
-    m_dataRecord[timestamp//WEEK_TIMESTEP][timestamp%WEEK_TIMESTEP] = 25#(e_flowrate[0]+e_flowrate[1])
+    #Update the bar-graph record with the current average temperature.
+    m_dataRecord[timestamp//WEEK_TIMESTEP][timestamp%WEEK_TIMESTEP] = (s_Temperature[0] + s_Temperature[1])/2
     #Calculate the rolling average for the current time ID only. Other values don't need to be recalculated.
-    m_ravg = 0.0 #Temporary value, does not need to leave scope.
+    m_ravg = 0.0
     for i in range(RAVG_DEPTH):
         m_ravg += m_dataRecord[i][timestamp%WEEK_TIMESTEP]
     m_bargraph[timestamp%WEEK_TIMESTEP] = m_ravg/RAVG_DEPTH
@@ -281,31 +289,138 @@ def picoHardwareLoop():
         
     #PLACEHOLDER: Push results to webpage-exposed API. Note: This might not be necessary; since it's running in a separate thread, the results can be dynamically accessed so long as they're global variables.
     
-def get_status(): #Intakes the status of things we want to push to the webpage as a dictionary and then returns it as a json to be pushed. This is the main Pico -> Webpage API.
-    status = {
-        "temp1": s_Temperature[0],
-        "temp2": s_Temperature[1],
-        "flow1": e_flowrate[0],
-        "flow2": e_flowrate[1],
-        "irdtct": (m_irStatus[0]+m_irStatus[1]) #number of people present
-    }
-    return json.dumps(status)
-
-def web_page(m_data):
-    bar_width = 8
-    m_bars_data = []
-    m_text_data = []
+def get_status(): #Intakes the status of things we want to push to the webpage as a dictionary and then returns it as a json to be pushed. This is the main Pico -> Webpage 'API'; everything we want to automatically update without refreshing the page should be recorded here and updated by JS inside the webpage.
     avg_temp = (s_Temperature[0] + s_Temperature[1])/2
     heater_check = heater_status(shower1_status, shower2_status)
     num_showers = (m_irStatus[0] + m_irStatus[1])
     flow = (e_flowrate[0] + e_flowrate[1])
+    status = {
+        "temp1": s_Temperature[0],
+        "temp2": s_Temperature[1],
+        "avg_temp": avg_temp,
+        "heater_check": heater_check,
+        "num_showers": num_showers,
+        "flow": flow,
+        "shower_occ0" : shower_occupency[0],
+        "shower_occ1" : shower_occupency[1],
+        "sh1_heatstatus" : shower1_status,
+        "sh2_heatstatus" : shower2_status
+    }
+    return json.dumps(status)
+
+def web_page(m_data):#Generates the webpage payload. I separated out the style, script, and main body of the HTML into separate strings so we could work with them more easily.
+    bar_width = 8
+    m_bars_data = []
+    m_text_data = []
     for i in range(COARSE_TIMESTEP): #Counts off each day, from 0 to 6.
         dayslice = [m_data[j] for j in range(i*FINE_TIMESTEP,(i+1)*FINE_TIMESTEP)]
         print("Printing bars,", dayslice)
-        m_bars_data.append(m_bars_day(dayslice)) #These need to pass m_bars_day and m_peak_day the relevant data from m_bargraph. Do I need to take a slice?
+        m_bars_data.append(m_bars_day(dayslice)) #These need to pass m_bars_day and m_peak_day the relevant data from m_bargraph.
         m_text_data.append(m_peak_day(dayslice))
-    m_bars_data = "\n".join(m_bars_data)
+    m_bars_data = "\n".join(m_bars_data) #Terminates the end with a newline.
     m_text_data = "\n".join(m_text_data)
+    
+    styleblock = """
+        .barbox { /*Generic centering class for non-graphic elements of the graph section*/
+            text-align: center;
+            vertical-align: middle;
+        } 
+        .bar { /*The bar element of the graph section, gets procedurally generated by python templating*/
+            height: 150px;
+            width: 8px;
+            display: inline-block;
+            background-color: #004499;
+            padding: 0px;
+        } 
+        /*Format class for the text data on row 3 of the graph*/
+        .bartext {font-family: "Times New Roman", Times, serif;} 
+        .box { /* Dictates the colour, width, height alignment of contents, and other relevant details of the black boxes used in the second row of the table */
+            border: 2px solid black;
+            padding: 10px;
+            background-color:white;
+            color:black; width:100px;
+            height:75px;
+            margin: 0 auto;
+            align-items:center;
+            justify-content:center;
+            display:inline-block;
+        } 
+        
+        .sebastian .slider {width: 100%;}
+        .sebastian th, .sebastian td {
+            padding-left: 20px;
+            padding-right: 20px;
+        }
+    """
+
+    scriptblock = """
+        function decTruncate(v) { /*Apparently this is the best way to round to two decimal places using Javascript. I know! Weird language.*/
+            return Math.round(v*100)/100;
+        }
+        function updateStatus() {
+            fetch("/status", {
+                method: "GET",
+                headers: {
+                    "Accept": "application/json"
+                }
+            })
+            .then((response) => response.ok ? response.json() : Promise.reject(response))
+            .then((data) => {
+                document.getElementById("temp1").innerText = decTruncate(data.temp1); /*This bit of the JS updates all of the values we want to have auto-update on the page! This doesn't include the bar graphs; they can't be auto-regenerated but record very long-term data anyway, so the bar graphs auto-updating would be sort of pointless strain on the connection.*/
+                document.getElementById("temp2").innerText = decTruncate(data.temp2);
+                document.getElementById("avg_temp").innerText = decTruncate(data.avg_temp);
+                document.getElementById("heater_check").innerText = data.heater_check;
+                document.getElementById("num_showers").innerText = data.num_showers;
+                document.getElementById("flow").innerText = decTruncate(data.flow);
+                document.getElementById("shower_occ1").innerText = data.shower_occ1;
+                document.getElementById("shower_occ2").innerText = data.shower_occ2;
+                document.getElementById("sh1_heatstatus").innerText = data.sh1_heatstatus;
+                document.getElementById("sh2_heatstatus").innerText = data.sh2_heatstatus;
+            });
+        }
+        setInterval(updateStatus, 1000); // Refresh every 1 second
+
+        const queryParams = window.location.search;
+        const URLParams = new URLSearchParams(window.location.search);
+        var slider = document.getElementById("threshold1");
+        var output = document.getElementById("value1");
+        var slider2 = document.getElementById("threshold2");
+        var output2 = document.getElementById("value2");
+        slider.value = URLParams.get('threshold1');
+        slider2.value = URLParams.get('threshold2');
+
+        //For Updating the URL with query parameters:
+        function updateURL(){
+            var slidervalue1 = document.getElementById("threshold1").value; //These get the threshold values.
+            var slidervalue2 = document.getElementById("threshold2").value;
+
+            var baseUrl = window.location.href.split('?')[0]; //This stores the current URL
+            var newUrl = baseUrl + "?threshold1=" + encodeURIComponent(slidervalue1) + "&threshold2=" + encodeURIComponent(slidervalue2); //This attaches the threshold values to a new URL
+
+            
+            //This updates the URL at the top
+            //Maya's note: it updates the URL but didn't actually push the results to the server; for now I'll use replace() to ensure it gets pushed, and I'll try to find a less clunky way to implement it after, if there's time.
+            //window.history.pushState({ path: newUrl }, '', newUrl);
+            window.location.replace(newUrl);
+
+        }
+
+        //updateURL();
+
+        output.innerHTML = slider.value;
+        output2.innerHTML = slider2.value;
+
+        slider.oninput = function() {
+            output.innerHTML = this.value;
+        }
+
+        slider2.oninput = function() {
+            output2.innerHTML = this.value;
+        }
+
+        slider.addEventListener("change",(event) => {updateURL();});
+        slider2.addEventListener("change",(event) => {updateURL();});
+    """
     html = """
     <html>
         <head>
@@ -313,16 +428,7 @@ def web_page(m_data):
             <meta name="viewport" content="width=device-width, initial-scale=1">
             <link rel="icon" href="data:,">
             <style>
-            .barbox {{text-align: center; vertical-align: middle;}} /*Generic centering class for non-graphic elements of the graph section*/
-            .bar {{height: 150px; width: {bar_width}px; display: inline-block; background-color: #004499; padding: 0px;}} /*The bar element of the graph section, gets procedurally generated by python templating*/
-            .bartext {{font-family: "Times New Roman", Times, serif;}} /*Format class for the text data on row 3 of the graph*/
-            .box {{border: 2px solid black; padding: 10px; background-color:white; color:black; width:100px; height:75px; margin: 0 auto; align-items:center; justify-content:center; display:inline-block;}} /* Dictates the colour, width, height alignment of contents, and other relevant details of the black boxes used in the second row of the table */
-            
-            .sebastian .slider {{width: 100%;}}
-            .sebastian th, .sebastian td {{
-                padding-left: 20px;
-                padding-right: 20px;
-            }}
+                {styleblock}
             </style>
         </head>
         <body>
@@ -336,22 +442,22 @@ def web_page(m_data):
                 <tr> <!--Start of the second row of the table - contains data collected by the sensors-->
                 <td>
                     <div style="font-size:170%" class="box"> <!--Div for water temperature value, declares font size and adds box-->
-                    {avg_temp}&deg;C <!--The temperature data from the thermistor is displayed here-->
+                    <span id="avg_temp"></span>&deg;C <!--The temperature data from the thermistor is displayed here-->
                     </div>
                 </td>
                 <td>
                     <div style="font-size:170%" class="box"> <!--Div for the heater status, declares font size and adds box-->
-                    {heater_check} <!--States whether the heater is on/off-->
+                    <span id="heater_check"></span> <!--States whether the heater is on/off-->
                     </div>
                 </td>
                 <td>
                     <div style="font-size:170%" class="box"> <!--Div for the number of showers currently in use, declares font size and adds box-->
-                    {num_showers} <!--The IR sensor detects how many showers are in use and that number is displayed here-->
+                    <span id="num_showers"></span><!--The IR sensor detects how many showers are in use and that number is displayed here-->
                     </div>
                 </td>
                 <td>
                     <div style="font-size:170%" class="box"> <!--Div for the current water usage, declares font size and adds box-->
-                    {flow} L/min <!--Amount of water being used in L/min, will be calculated using data from photoresistor-->
+                    <span id="flow"></span> L/min <!--Amount of water being used in L/min, will be calculated using data from photoresistor-->
                     </div>
                 </td>
                 
@@ -385,7 +491,7 @@ def web_page(m_data):
                     </tr>
                     <tr>
                         <td>Status:</td>
-                        <td>{shower_occupency0}</td> <!--One of these will be selected depending on the IR status-->  
+                        <td><span id="shower_occ1"></span></td> <!--One of these will be selected depending on the IR status-->  
                         <td style="text-align:center;">HOT Threshold</td> 
                     </tr>
                     <tr>
@@ -393,12 +499,12 @@ def web_page(m_data):
                     </tr>
                     <tr>
                         <td>Water Temperature:</td>
-                        <td>{s_Temperature0}°C</td><!--This is where the temperature of the water for the current shower will go-->  
-                        <td><input type="range" min="0" max="50" value="40" class="slider" id="threshold1">10°C <span style="float:right">50°C</span></td>
+                        <td><span id="temp1"></span>&#176;C</td><!--This is where the temperature of the water for the current shower will go-->  
+                        <td><input type="range" min="0" max="50" value="40" class="slider" id="threshold1">10&#176;C <span style="float:right">50&#176;C</span></td>
                     
                         <!--Later, this and other sliders like it will relay the selected value back to the pico to change the threshold that enables the inline heating system-->  
                     
-                        <td style="border:1px solid black;"><span id="value1"></span>°C</td> 
+                        <td style="border:1px solid black;"><span id="value1"></span>&#176;C</td> 
                     
                     
                     <!--This is where the value of the current HOT threshold for the shower is, based on the slider selection-->
@@ -409,7 +515,7 @@ def web_page(m_data):
                     </tr>
                     <tr>
                         <td>Heater Status:</td>
-                        <td>{shower1_heater_status}</td> <!--One of these will be selected based on the heater status, which may be its own variable or extrapolated based on current temperature and threshold. I believe the former is more appropriate-->  
+                        <td><span id="sh1_heatstatus"></span></td> <!--One of these will be selected based on the heater status, which may be its own variable or extrapolated based on current temperature and threshold. I believe the former is more appropriate-->  
                     </tr>   
                 </table> 
         
@@ -423,7 +529,7 @@ def web_page(m_data):
                     </tr>
                     <tr>
                         <td>Status:</td>
-                        <td>{shower_occupency1}</td>
+                        <td><span id="shower_occ2"></span></td>
                         <td style="text-align:center;">HOT Threshold</td>
                     </tr>
                     <tr>
@@ -431,18 +537,18 @@ def web_page(m_data):
                     </tr>
                     <tr>
                         <td>Water Temperature:</td>
-                        <td>{s_Temperature1}°C</td>
+                        <td><span id="temp2"></span>&#176;C</td>
                         
-                        <td><input type="range" min="0" max="50" value="40" class="slider" id="threshold2">10°C <span style="float:right">50°C</span></td>
+                        <td><input type="range" min="0" max="50" value="40" class="slider" id="threshold2">10&#176;C <span style="float:right">50&#176;C</span></td>
                         
-                        <td style="border:1px solid black;"><span id="value2"></span>°C</td>
+                        <td style="border:1px solid black;"><span id="value2"></span>&#176;C</td>
                     </tr>
                     <tr>
                         <td></td>
                     </tr>
                     <tr>
                         <td>Heater Status:</td>
-                        <td>{shower2_heater_status}</td>
+                        <td><span id="sh2_heatstatus"></span></td>
                     </tr>
                 </table>  
                 <!--</center>-->
@@ -452,54 +558,14 @@ def web_page(m_data):
             </div>
 
             <script>
-                const queryParams = window.location.search;
-                const URLParams = new URLSearchParams(window.location.search);
-                var slider = document.getElementById("threshold1");
-                var output = document.getElementById("value1");
-                var slider2 = document.getElementById("threshold2");
-                var output2 = document.getElementById("value2");
-                slider.value = URLParams.get('threshold1');
-                slider2.value = URLParams.get('threshold2');
-
-                //For Updating the URL:
-                function updateURL(){{
-                var slidervalue1 = document.getElementById("threshold1").value; //These get the threshold values.
-                var slidervalue2 = document.getElementById("threshold2").value;
-
-                var baseUrl = window.location.href.split('?')[0]; //This stores the current URL
-                var newUrl = baseUrl + "?threshold1=" + encodeURIComponent(slidervalue1) + "&threshold2=" + encodeURIComponent(slidervalue2); //This attaches the threshold values to a new URL
-
-                
-                //This updates the URL at the top
-                //Maya's note: it updates the URL but didn't actually push the results to the server; for now I'll use replace() to ensure it gets pushed, and I'll try to find a less clunky way to implement it after, if there's time.
-                //window.history.pushState({{ path: newUrl }}, '', newUrl);
-                window.location.replace(newUrl);
-
-                }}
-
-                //updateURL();
-
-                output.innerHTML = slider.value;
-                output2.innerHTML = slider2.value;
-
-                slider.oninput = function() {{
-                    output.innerHTML = this.value;
-                }}
-
-                slider2.oninput = function() {{
-                    output2.innerHTML = this.value;
-                }}
-
-                slider.addEventListener("change",(event) => {{updateURL();}});
-                slider2.addEventListener("change",(event) => {{updateURL();}});
-
+                {scriptblock}
             </script>
         </body>
     </html>
-    """.format(m_bars_data=m_bars_data,m_text_data = m_text_data, bar_width=bar_width, s_Temperature0 = s_Temperature[0], s_Temperature1 = s_Temperature[1], flow=flow, avg_temp=avg_temp, num_showers=num_showers, heater_check=heater_check, shower_occupency0 = shower_occupency[0], shower_occupency1 = shower_occupency[1], shower1_heater_status = shower1_heater_status, shower2_heater_status = shower2_heater_status)
+    """.format(styleblock = styleblock, scriptblock = scriptblock, m_bars_data=m_bars_data,m_text_data = m_text_data, bar_width=bar_width)
     return html
 
-def send_response(conn, headers, body, max_attempts = 10):
+def send_response(conn, headers, body, max_attempts = 10): #A function that handles the apparent inability of the Pico to send the entire webpage in one go. It'll keep track of how much gets sent with each attempt, and keep going until there's no more to push. If it takes too many attempts, it fails.
     headlen = 0
     attempts = 0
     while headlen < len(headers) and attempts < max_attempts:
@@ -520,22 +586,18 @@ def send_response(conn, headers, body, max_attempts = 10):
     if bodylen < len(body):
         raise RuntimeError("Failed to send body after {} attempts".format(attempts))
     
-def process_request(request):
-    global shower1_status
-    global shower2_status
+def process_request(request): #An HTTP header interpreter to enable us to pull out the query parameters as integers, and throws an error if it encounters difficulty.
     response = ""
-    # if request:
-    #     request = str(request)
-    #     print('Request Content = {}\n'.format(request))
-    #     shower_temp_threshold[0] = get_url_query(request,threshold_q_start_indi[0],threshold_q_start_indi[1])
-    #     shower_temp_threshold[1] = get_url_query(request,threshold_q_start_indi[1]," ")
-    #     print("The threshold values for the showers are", shower_temp_threshold[1],"and", shower_temp_threshold[0],"respectively.")
 
-    shower1_status = set_heater_status(2, shower_temp_threshold[0], s_Temperature[0])
-    shower2_status = set_heater_status(3, shower_temp_threshold[1], s_Temperature[1])
-
+    # print(request)
+    global shower_temp_threshold
     if request["path"] == "/":
         print("getting webpage")
+        for k, v in request["query"]:
+            if k == "threshold1":
+                shower_temp_threshold[0] = int(v)
+            if k == "threshold2":
+                shower_temp_threshold[1] = int(v)
         body = web_page(m_bargraph)
         headers = ["HTTP/1.1 200 OK", "Content-Type: text/html", "Content-Length: {}".format(len(body)), "Connection: close"]
         response = "\n".join(headers) + "\n\n" + body
@@ -549,8 +611,7 @@ def process_request(request):
         response = "HTTP/1.1 404 Not Found\n\n"
     return response
 
-def respond_request(socket):
-    #Beginning of websocket working document.
+def respond_request(socket): #Connect to the socket and kick back connection information to the console.
     try:
         conn, addr = socket.accept()
     except OSError as e:
@@ -562,6 +623,7 @@ def respond_request(socket):
     print('Got a connection from {}'.format(addr))
 
     try:
+        # Pump bytes from the buffer until we have the whole request (usually just one pass)
         recv_bufsize = 1024
         reqdata = b""
         chunk = conn.recv(recv_bufsize)
@@ -572,14 +634,17 @@ def respond_request(socket):
             else:
                 chunk = None
 
+        # If the request was empty, just skip it completely
         if not reqdata:
             return None
         
+        # UTF-8 is the accepted language of the web
         reqdata = reqdata.decode("UTF-8")
         reqdata = reqdata.replace("\r\n", "\n")
+        
         # print('Request Content = {}'.format(reqdata))
 
-        request = {}
+        request = {} #Breaks down the contents of request as a dictionary for interpretation, and passes that to process_request above.
         reqline, _, reqdata = reqdata.partition("\n")
         reqline = reqline.split(" ")
         request["method"] = reqline[0]
@@ -616,17 +681,17 @@ def respond_request(socket):
     
 #Seb's new global variables:
 threshold_q_start_indi = ["?","&"] #index 0 for shower 1, index 1 for shower 2
-shower_temp_threshold = [1,1]
+shower_temp_threshold = [25,25]
 shower_actuator_pindex = [actuatorPin[2],actuatorPin[3]]
 shower_occupency = ["Vacant", "Vacant"]
 shower1_heater_status = "Off"
 shower2_heater_status = "Off"
 
-def main():
+def main(): #The main loop. It just makes me feel better to put this in a function. Doesn't it make you feel better, too?
     global shutdown
     print("Booting up...")
 
-    watchdog = machine.WDT(timeout=5000)
+    watchdog = machine.WDT(timeout=5000) #The Pico kept crashing into a weird unreachable state where I'd have to power cycle it, so now when the Pico encounters a problem it'll just time out and hard-reset itself, no problem.
     print("Created Watchdog timer")
 
     # Create a network connection
@@ -652,15 +717,16 @@ def main():
             watchdog.feed()
             respond_request(s)
             #print(utime.ticks_ms())
-            if utime.ticks_diff(next_hardware_update, utime.ticks_ms()) < 0:
+            if utime.ticks_diff(next_hardware_update, utime.ticks_ms()) < 0: #Triggers the hardware loop once per second or so (it's lagged slightly by s.settimeout). 
                 print("Hardware update...")
                 picoHardwareLoop()
                 next_hardware_update = utime.ticks_ms() + 1000
+                gc.collect() #Clean up unused memory. This code, when run on a Pi Pico W, will run into memory allocation failures without it, and hard fault.
         except KeyboardInterrupt:
             print("Shutting down...")
             shutdown = True
-    s.close()
+    s.close() #This single command makes sure the socket closes when you're done using the Pico.
     
-main()
+main() #Sets all of the above code into motion.
 
 
