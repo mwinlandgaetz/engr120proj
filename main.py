@@ -294,6 +294,8 @@ def get_status(): #Intakes the status of things we want to push to the webpage a
     heater_check = heater_status(shower1_status, shower2_status)
     num_showers = (m_irStatus[0] + m_irStatus[1])
     flow = (e_flowrate[0] + e_flowrate[1])
+    shower_occupency[0] = "Vacant" if m_irStatus[0] == 0 else "Occupied"
+    shower_occupency[1] = "Vacant" if m_irStatus[1] == 0 else "Occupied"
     status = {
         "temp1": s_Temperature[0],
         "temp2": s_Temperature[1],
@@ -372,8 +374,8 @@ def web_page(m_data):#Generates the webpage payload. I separated out the style, 
                 document.getElementById("heater_check").innerText = data.heater_check;
                 document.getElementById("num_showers").innerText = data.num_showers;
                 document.getElementById("flow").innerText = decTruncate(data.flow);
+                document.getElementById("shower_occ0").innerText = data.shower_occ0;
                 document.getElementById("shower_occ1").innerText = data.shower_occ1;
-                document.getElementById("shower_occ2").innerText = data.shower_occ2;
                 document.getElementById("sh1_heatstatus").innerText = data.sh1_heatstatus;
                 document.getElementById("sh2_heatstatus").innerText = data.sh2_heatstatus;
             });
@@ -491,7 +493,7 @@ def web_page(m_data):#Generates the webpage payload. I separated out the style, 
                     </tr>
                     <tr>
                         <td>Status:</td>
-                        <td><span id="shower_occ1"></span></td> <!--One of these will be selected depending on the IR status-->  
+                        <td><span id="shower_occ0"></span></td> <!--One of these will be selected depending on the IR status-->  
                         <td style="text-align:center;">HOT Threshold</td> 
                     </tr>
                     <tr>
@@ -529,7 +531,7 @@ def web_page(m_data):#Generates the webpage payload. I separated out the style, 
                     </tr>
                     <tr>
                         <td>Status:</td>
-                        <td><span id="shower_occ2"></span></td>
+                        <td><span id="shower_occ1"></span></td>
                         <td style="text-align:center;">HOT Threshold</td>
                     </tr>
                     <tr>
