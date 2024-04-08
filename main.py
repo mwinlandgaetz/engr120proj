@@ -586,7 +586,7 @@ def send_response(conn, headers, body, max_attempts = 10): #A function that hand
     if bodylen < len(body):
         raise RuntimeError("Failed to send body after {} attempts".format(attempts))
     
-def process_request(request): #An HTTP header interpreter to enable us to pull out the query parameters as integers, and throws an error if it encounters difficulty.
+def process_request(request): #An HTTP header interpreter to route the request based on its path, and to enable us to pull out the query parameters as integers. Returns a 404 if an invalid path is requested.
     response = ""
 
     # print(request)
@@ -644,6 +644,7 @@ def respond_request(socket): #Connect to the socket and kick back connection inf
         
         # print('Request Content = {}'.format(reqdata))
 
+        # See https://developer.mozilla.org/en-US/docs/Web/HTTP/Messages for information on the HTTP request structure
         request = {} #Breaks down the contents of request as a dictionary for interpretation, and passes that to process_request above.
         reqline, _, reqdata = reqdata.partition("\n")
         reqline = reqline.split(" ")
@@ -664,12 +665,16 @@ def respond_request(socket): #Connect to the socket and kick back connection inf
             k, _, v = line.partition(":")
             request["headers"].append((k, v.strip(" ")))
 
-        response = process_request(request).encode("UTF-8")
+        try:
+            response = process_request(request).encode("UTF-8")
+        except Exception:
+            # Return a 500 code if the request processor encounters an exception
+            response = b"HTTP/1.1 500 Internal Server Error\n\n"
         sentlen = 0
         while sentlen < len(response):
             sentlen += conn.send(response[sentlen:])
         print("Sent {} bytes response.".format(sentlen))
-    except OSError as e:
+    except OSError as e: #If conn.recv times out, ignore it and return to the main loop.
         if e.errno == 110:
             return
         else:
